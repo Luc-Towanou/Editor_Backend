@@ -1,0 +1,1 @@
+Lors de l'istallation de prisma, le fichier prisma.config.ts s'est créé. Il m'a empêcher de migrer. J'ai dû le suprimer pour pouvoir le faire.

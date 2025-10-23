@@ -1,0 +1,234 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  // output   = "../generated/prisma"
+}
+
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id          String         @id @default(uuid())
+  nom         String
+  email       String         @unique
+  mot_de_passe String
+  role        Role
+  telephone   String?
+  statut      StatutUser        @default(actif)
+  created_at  DateTime       @default(now())
+  updated_at  DateTime       @updatedAt
+
+  auteur      Auteur?
+  notifications Notification[]
+}
+
+model Auteur {
+  id             String     @id @default(uuid())
+  user_id String     @unique
+  bio            String?
+  nationalite    String?
+  photo          String?
+  taux_royalties Float?     @default(10.0)
+  created_at     DateTime   @default(now())
+
+  user    User @relation(fields: [user_id], references: [id])
+  livres         LivreAuteur[]
+  royalties      Royalties[]
+}
+
+model Livre {
+  id               String           @id @default(uuid())
+  titre            String
+  isbn             String           @unique
+  resume           String?
+  prix_public      Float
+  date_publication DateTime?
+  categorie        String?
+  format           Format
+  statut           StatutLivre
+  couverture       String?
+  created_at       DateTime         @default(now())
+  updated_at       DateTime         @updatedAt
+
+  auteurs          LivreAuteur[]
+  stocks           Stock?
+  ventes           Vente[]
+  royalties        Royalties[]
+  commandeLivres   CommandeLivre[]
+}
+
+model LivreAuteur {
+  id        String   @id @default(uuid())
+  livre_id  String
+  auteur_id String
+
+  livre     Livre    @relation(fields: [livre_id], references: [id])
+  auteur    Auteur   @relation(fields: [auteur_id], references: [id])
+}
+
+model Stock {
+  id                  String   @id @default(uuid())
+  livre_id            String   @unique
+  quantite_disponible Int
+  seuil_alerte        Int?
+  emplacement         String?
+  created_at          DateTime @default(now())
+
+  livre               Livre    @relation(fields: [livre_id], references: [id])
+}
+
+model Librairie {
+  id         String          @id @default(uuid())
+  nom        String
+  contact    String?
+  email      String?
+  telephone  String?
+  adresse    String?
+  remise     Float?          @default(0.0)
+  created_at DateTime        @default(now())
+
+  commandes  Commande[]
+}
+
+model Commande {
+  id              String          @id @default(uuid())
+  librairie_id    String
+  statut          StatutCommande  @default(en_attente)
+  date_commande   DateTime        @default(now())
+  total           Float           @default(0.0)
+  created_at      DateTime        @default(now())
+
+  librairie       Librairie       @relation(fields: [librairie_id], references: [id])
+  commandeLivres  CommandeLivre[]
+  bordereaux      Bordereau[]
+}
+
+model CommandeLivre {
+  id            String   @id @default(uuid())
+  commande_id   String
+  livre_id      String
+  quantite      Int
+  prix_unitaire Float
+  sous_total    Float
+
+  commande      Commande @relation(fields: [commande_id], references: [id])
+  livre         Livre    @relation(fields: [livre_id], references: [id])
+}
+
+model Vente {
+  id            String   @id @default(uuid())
+  livre_id      String
+  quantite      Int
+  montant_total Float
+  canal         Canal
+  date_vente    DateTime @default(now())
+
+  livre         Livre    @relation(fields: [livre_id], references: [id])
+}
+
+model Royalties {
+  id             String       @id @default(uuid())
+  auteur_id      String
+  livre_id       String
+  periode        String
+  ventes_total   Int
+  montant_du     Float
+  statut         StatutPaiement @default(en_attente)
+  date_paiement  DateTime?
+  created_at     DateTime @default(now())
+
+  auteur         Auteur @relation(fields: [auteur_id], references: [id])
+  livre          Livre  @relation(fields: [livre_id], references: [id])
+}
+
+model Bordereau {
+  id            String      @id @default(uuid())
+  commande_id   String
+  type          TypeBordereau
+  numero        String       @unique
+  date_emission DateTime     @default(now())
+  fichier_pdf   String?
+  created_at    DateTime     @default(now())
+
+  commande      Commande     @relation(fields: [commande_id], references: [id])
+}
+
+model Notification {
+  id             String     @id @default(uuid())
+  user_id String
+  titre          String
+  message        String
+  type           TypeNotification
+  lu             Boolean    @default(false)
+  created_at     DateTime   @default(now())
+
+  user    User @relation(fields: [user_id], references: [id])
+}
+
+enum Role {
+  admin
+  editeur
+  auteur
+  libraire
+}
+
+enum StatutUser {
+    inactif         // Compte créé mais non activé (ex. : email non vérifié)
+    actif             // Compte pleinement fonctionnel
+    suspendu       // Compte temporairement désactivé par un admin
+    bloque           // Compte bloqué pour raison de sécurité (ex. : trop de tentatives)
+    supprime       // Compte supprimé (soft delete)
+    en_attente   // En attente de validation manuelle ou d’un processus
+}
+
+enum Format {
+  broché
+  ebook
+  audiobook
+}
+
+enum StatutLivre {
+  en_preparation
+  publie
+  epuise
+  retire
+}
+
+enum StatutCommande {
+  en_attente
+  en_livraison
+  livree
+  annulee
+}
+
+enum TypeBordereau {
+  livraison
+  retour
+}
+
+enum TypeNotification {
+  stock
+  commande
+  systeme
+  info
+}
+
+enum StatutPaiement {
+  en_attente
+  paye
+}
+
+enum Canal {
+  librairie
+  direct
+  autre
+}
