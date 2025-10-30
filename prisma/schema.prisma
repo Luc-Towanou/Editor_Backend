@@ -13,7 +13,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  // directUrl = env("DIRECT_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -29,24 +29,53 @@ model User {
 
   auteur      Auteur?
   notifications Notification[]
+
+  AuthSession AuthSession[]
+
+  EmailVerification EmailVerification[]
+
+  PasswordReset PasswordReset[]
 }
+
+model MaisonEdition {
+  id           String        @id @default(uuid())
+  nom          String
+  email        String?       
+  telephone    String?
+  adresse      String?
+  logo         String?
+  created_at   DateTime      @default(now())
+
+  // Relations
+  auteurs      Auteur[]
+  livres       Livre[]
+  clients      Client[]
+  commandes    Commande[]
+  notifications Notification[]
+}
+
 
 model Auteur {
   id             String     @id @default(uuid())
-  user_id String     @unique
+  user_id        String     @unique
+  maison_id      String
   bio            String?
   nationalite    String?
   photo          String?
   taux_royalties Float?     @default(10.0)
   created_at     DateTime   @default(now())
 
+  
+ 
   user    User @relation(fields: [user_id], references: [id])
+  maison         MaisonEdition  @relation(fields: [maison_id], references: [id])
   livres         LivreAuteur[]
   royalties      Royalties[]
 }
 
 model Livre {
   id               String           @id @default(uuid())
+  maison_id        String
   titre            String
   isbn             String           @unique
   resume           String?
@@ -59,6 +88,8 @@ model Livre {
   created_at       DateTime         @default(now())
   updated_at       DateTime         @updatedAt
 
+    
+  maison         MaisonEdition  @relation(fields: [maison_id], references: [id])
   auteurs          LivreAuteur[]
   stocks           Stock?
   ventes           Vente[]
@@ -86,28 +117,51 @@ model Stock {
   livre               Livre    @relation(fields: [livre_id], references: [id])
 }
 
-model Librairie {
-  id         String          @id @default(uuid())
+// model Librairie {
+//   id         String          @id @default(uuid())
+//   nom        String
+//   contact    String?
+//   email      String?
+//   telephone  String?
+//   adresse    String?
+//   remise     Float?          @default(0.0)
+//   created_at DateTime        @default(now())
+
+//   commandes  Commande[]
+// }
+
+model Client {
+  id         String   @id @default(uuid())
+  maison_id  String
   nom        String
   contact    String?
   email      String?
+  ifu        Int?
   telephone  String?
   adresse    String?
-  remise     Float?          @default(0.0)
-  created_at DateTime        @default(now())
+  type       String   @default("librairie") // ex: librairie, particulier, entreprise, distributeur, ecole
+  remise     Float?   @default(0.0)
+  created_at DateTime @default(now())
 
+  
+  maison     MaisonEdition  @relation(fields: [maison_id], references: [id])
   commandes  Commande[]
 }
 
 model Commande {
   id              String          @id @default(uuid())
-  librairie_id    String
+  // librairie_id    String
+  client_id       String?
+  maison_id   String
   statut          StatutCommande  @default(en_attente)
   date_commande   DateTime        @default(now())
   total           Float           @default(0.0)
   created_at      DateTime        @default(now())
 
-  librairie       Librairie       @relation(fields: [librairie_id], references: [id])
+  
+  client          Client?  @relation(fields: [client_id], references: [id])
+  maison      MaisonEdition  @relation(fields: [maison_id], references: [id])
+  // librairie       Librairie       @relation(fields: [librairie_id], references: [id])
   commandeLivres  CommandeLivre[]
   bordereaux      Bordereau[]
 }
@@ -164,14 +218,17 @@ model Bordereau {
 
 model Notification {
   id             String     @id @default(uuid())
-  user_id String
+  user_id        String
+  maison_id      String
   titre          String
   message        String
   type           TypeNotification
   lu             Boolean    @default(false)
   created_at     DateTime   @default(now())
 
+
   user    User @relation(fields: [user_id], references: [id])
+  maison      MaisonEdition @relation(fields: [maison_id], references: [id])
 }
 
 enum Role {
@@ -229,6 +286,48 @@ enum StatutPaiement {
 
 enum Canal {
   librairie
+  particulier
+  entreprise
+  distributeur
+  ecole
   direct
   autre
+}
+
+
+
+model AuthSession {
+  id            String   @id @default(uuid())
+  user_id        String
+  refreshHash   String   // hash du refresh token
+  deviceInfo    String?
+  ip            String?
+  revoked       Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  expiresAt     DateTime
+
+  user User @relation(fields: [user_id], references: [id])
+}
+
+model EmailVerification {
+  id        String   @id @default(uuid())
+  user_id   String
+  codeHash  String   // hash du code OTP
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id])
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  user_id    String
+  tokenHash String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id])
 }
