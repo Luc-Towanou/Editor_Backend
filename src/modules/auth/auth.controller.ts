@@ -14,6 +14,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { ApiTags, ApiBody, ApiResponse, ApiBearerAuth, ApiCreatedResponse } from '@nestjs/swagger';
 
+
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
@@ -27,9 +28,15 @@ export class AuthController {
     return this.auth.signup(body as any);
   }
 
-  @Post('verify-email')
+  @ApiBody({ type: VerifyEmailDto })
+  @Post('verifycation')
   async verify(@Body() body: VerifyEmailDto) {
     return this.auth.verifyEmail(body.userId, body.code);
+  }
+
+  @Post('resend-verify-email')
+  async resentotp(@Body() body: RequestResetDto) {
+    return this.auth.resendEmailOtp(body.email);
   }
 
   @HttpCode(200)
@@ -37,7 +44,6 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Connexion réussie' })
   @ApiResponse({ status: 401, description: 'Identifiants invalides' })
   @Post('login')
-  @HttpCode(200)
   async login(@Body() body: LoginDto, @Req() req: any, @Res({ passthrough: true }) reply: FastifyReply) {
     const user = await this.auth.validateUser(body.email, body.mot_de_passe);
     if (!user) throw { statusCode: 401, message: 'Invalid credentials' };

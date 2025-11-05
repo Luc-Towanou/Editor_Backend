@@ -12,6 +12,7 @@ import type { StringValue } from 'ms';  //for methode sign in access token
 import * as crypto from 'crypto';
 import * as nodemailer from 'nodemailer';
 import { JwtPayload } from 'jsonwebtoken';
+import { UserNotFoundException } from './exceptions/user-not-found.exception';
 
 @Injectable()
 export class AuthService {
@@ -54,42 +55,6 @@ export class AuthService {
 
   // /** --- Signup: create user + email verification OTP --- */
   // async signup(data: { // 1 la donnée de la requette pssée lors de l'inscription  
-  //   nom: string;
-  //   email: string;
-  //   mot_de_passe: string;
-  //   telephone?: string;
-  //   role?: string;
-  //   maison_id?: string;
-  // }) {
-  //   // 2- check existence user
-  //   const existing = await this.prisma.user.findUnique({ where: { email: data.email }});
-  //   if (existing) throw new BadRequestException('Email déjà utilisé');
-
-  //   const hashed = await this.hashPassword(data.mot_de_passe);
-  //   const user = await this.prisma.user.create({
-  //     data: {
-  //       nom: data.nom,
-  //       email: data.email,
-  //       mot_de_passe: hashed,
-  //       telephone: data.telephone ?? null,
-  //       role: (data.role as any) ?? 'auteur',
-  //       statut: 'en_attente', // en attente de verification
-  //     },
-  //   });
-
-  //   // 3- créer OTP
-  //   const codePlain = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
-  //   const codeHash = await this.hashToken(codePlain);
-  //   const expiresAt = dayjs().add(10, 'minute').toDate();
-
-  //   // 4- créer le user dans la table de verifictionde mail
-  //   await this.prisma.emailVerification.create({
-  //     data: {
-  //       user_id: user.id,
-  //       codeHash,
-  //       expiresAt,
-  //     },
-  //   });
 
   //   // 4- envoyer mail (simple)
   //   // const transport = this.getTransport();
@@ -109,24 +74,207 @@ export class AuthService {
 
   //   return { userId: user.id, message: 'Compte créé. Vérifie ton email pour activer.' };
   // }
-  async signup(data: {
-    nom: string;
-    email: string;
-    mot_de_passe: string;
-    telephone?: string;
-    role?: string;
-    maison_id?: string;
-  }) {
-    const existing = await this.prisma.user.findUnique({ where: { email: data.email }});
-    if (existing) throw new BadRequestException('Email déjà utilisé');
+  async sendOtpMail (email: string, codePlain: string) {
+    try {
+      // Envoi mail
+      await this.mailerService.sendMail(
+        email,
+        'Vérification de votre adresse email',
+        `<p>Votre code de vérification : <b>${codePlain}</b> (valable 10 minutes)</p>`
+      );
+    } catch (err) {
+      console.error('Erreur envoi mail:', err.message);
 
-    const hashed = await this.hashPassword(data.mot_de_passe);
+
+      throw new BadRequestException('Erreur lors de l’envoi du mail, réessaie plus tard.');
+    }
+
+    return { ok: true };
+  }
+  //   async initVerifyEmail ( data: {
+  //     user_id: string;
+  //     email: string;
+  //     codePlain?: string
+  //   }
+  //  ) {
+    
+    
+  //   const codePlain = data.codePlain ?? Math.floor(100000 + Math.random() * 900000).toString();
+  //   const codeHash = await this.hashToken(codePlain);
+  //   const expiresAt = dayjs().add(10, 'minute').toDate();
+
+  //   // 1- verification d'existance
+  //   // ⚠️⚠️ dans cette fonctions, les verifications préalables ont laissés pour clarté
+  //   // ⚠️ les faire avant appel de la fonction
+    
+  //   // // si le le user existe dans la table de verification des mail existe 
+  //   console.error('data:', data);
+  //   console.error('codePlain:', codePlain);
+  //   var existingEmail = await this.prisma.emailVerification.findFirst({ 
+  //     where: { user_id: data.user_id },
+  //     orderBy: { createdAt: 'desc' },
+  //   });
+  //   console.error('Table Email Existant:', existingEmail ?? null );
+  //   if (!existingEmail) { // si il n'exist pas on le cré
+
+  //     console.error('Table Email inexistant, creation..');
+  //     existingEmail = await this.prisma.emailVerification.create({
+  //       data: {
+  //         user: { connect: { id: data.user_id } },
+  //         codeHash,
+  //         expiresAt,
+  //       },
+  //     });
+  //     console.error('Table Email créé:', existingEmail ?? null );
+
+  //   }
+    
+  // //   const verification = await this.prisma.emailVerification.findUnique({ 
+  // //     user: { connect: { email: data.email } },
+  // //     select: { used: true, },
+  // // });
+  // // const isUsed = verification?.used;
+  // console.error('Table email:', existingEmail);
+  // // const verification = await this.prisma.emailVerification.findUnique({
+  // //   where: { email: data.email },
+  // //   select: { used: true },
+  // // });
+
+  // if (existingEmail?.used) throw new BadRequestException('Email dejà vérifié ✅' ); // si mail deja verifier, signaler
+
+    
+  //     // si mail non verifié 
+
+  //     await this.sendOtpMail ( data.email, codePlain ); // envoyer le mail otp
+    
+  // }
+  async initVerifyEmail(data: {
+    user_id: string;
+    email: string;
+  }) {
     const codePlain = Math.floor(100000 + Math.random() * 900000).toString();
     const codeHash = await this.hashToken(codePlain);
     const expiresAt = dayjs().add(10, 'minute').toDate();
 
-    // 👉 Transaction
-    const [user] = await this.prisma.$transaction([
+    // Vérifie s’il existe déjà un enregistrement non utilisé
+    const existing = await this.prisma.emailVerification.findFirst({
+      where: { user_id: data.user_id, used: false },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (existing) {
+      // Met à jour le code et la date d’expiration
+      await this.prisma.emailVerification.update({
+        where: { id: existing.id },
+        data: { codeHash, expiresAt },
+      });
+
+      console.log(`[OTP] Code mis à jour pour user ${data.user_id}`);
+    } else {
+      // Crée un nouvel enregistrement
+      await this.prisma.emailVerification.create({
+        data: {
+          user: { connect: { id: data.user_id } },
+          codeHash,
+          expiresAt,
+        },
+      });
+
+      console.log(`[OTP] Nouveau code créé pour user ${data.user_id}`);
+    }
+
+    // Envoi du mail
+    await this.sendOtpMail(data.email, codePlain);
+
+    return { ok: true };
+  }
+
+  // async signup(data: {  //commenté le 05 / 11
+  //   nom: string;
+  //   email: string;
+  //   mot_de_passe: string;
+  //   telephone?: string;
+  //   role?: string;
+  //   maison_id?: string;
+  // }) {
+  //   const existing = await this.prisma.user.findUnique({ where: { email: data.email }});
+  //   if (existing) throw new BadRequestException('Email déjà utilisé'); //aider le user à savoir deja ici si le compte est vérifié. ??
+
+  //   const hashed = await this.hashPassword(data.mot_de_passe);
+  //   const codePlain = Math.floor(100000 + Math.random() * 900000).toString();
+  //   const codeHash = await this.hashToken(codePlain);
+  //   const expiresAt = dayjs().add(10, 'minute').toDate();
+
+  //   //  Transaction
+  //   const [user] = await this.prisma.$transaction([
+  //     this.prisma.user.create({
+  //       data: {
+  //         nom: data.nom,
+  //         email: data.email,
+  //         mot_de_passe: hashed,
+  //         telephone: data.telephone ?? null,
+  //         role: (data.role as any) ?? 'auteur',
+  //         statut: 'en_attente',
+  //       },
+  //     }),
+
+  //     // la création du code se fait dans la même transaction
+  //     this.prisma.emailVerification.create({
+  //       data: {
+  //         user: { connect: { email: data.email } },
+  //         codeHash,
+  //         expiresAt,
+  //       },
+  //     }),
+  //     //
+
+  //   ]);
+
+  //   try {
+  //     // Envoi mail
+      
+  //     // email = data.email,
+  //     await this.initVerifyEmail({ user_id: user.id, email: user.email, codePlain});
+  //     // await this.mailerService.sendMail(
+  //     //   user.email,
+  //     //   'Vérification de votre adresse email',
+  //     //   `<p>Votre code de vérification : <b>${codePlain}</b> (valable 10 minutes)</p>`
+  //     // );
+  //   } catch (err) {
+  //     // console.error('Erreur envoi mail:', err.message);
+
+  //     // rollback manuel si le mail n’est pas parti
+      
+  //     await this.prisma.emailVerification.deleteMany({ where: { user_id: user.id } });
+  //     await this.prisma.user.delete({ where: { id: user.id } });
+
+  //     throw new BadRequestException('Erreur lors de l’envoi du mail, réessaie plus tard.');
+  //   }
+
+  //   return { 
+  //     userId: user.id,
+  //     message: 'Compte créé. Vérifie ton email pour activer ton compte.',
+  //   };
+  // } 
+  async signup(data: {
+  nom: string;
+  email: string;
+  mot_de_passe: string;
+  telephone?: string;
+  role?: string;
+  maison_id?: string;
+}) {
+  // Vérifie si l'utilisateur existe déjà
+  const existing = await this.prisma.user.findUnique({ where: { email: data.email } });
+  if (existing) throw new BadRequestException('Email déjà utilisé');
+
+  // Hash du mot de passe
+  const hashed = await this.hashPassword(data.mot_de_passe);
+
+  let user;
+  try {
+    // Transaction complète : création user + emailVerification
+    [user] = await this.prisma.$transaction([
       this.prisma.user.create({
         data: {
           nom: data.nom,
@@ -137,37 +285,66 @@ export class AuthService {
           statut: 'en_attente',
         },
       }),
-      // la création du code se fait dans la même transaction
       this.prisma.emailVerification.create({
         data: {
           user: { connect: { email: data.email } },
-          codeHash,
-          expiresAt,
+          codeHash: '', // temporaire, sera mis à jour dans initVerifyEmail
+          expiresAt: new Date(), // temporaire
         },
       }),
     ]);
 
-    try {
-      // Envoi mail
-      await this.mailerService.sendMail(
-        user.email,
-        'Vérification de votre adresse email',
-        `<p>Votre code de vérification : <b>${codePlain}</b> (valable 10 minutes)</p>`
-      );
-    } catch (err) {
-      console.error('Erreur envoi mail:', err.message);
+    // Mise à jour du code OTP dans emailVerification
+    await this.initVerifyEmail({ user_id: user.id, email: user.email });
 
-      // rollback manuel si le mail n’est pas parti
-      
-      await this.prisma.emailVerification.deleteMany({ where: { user_id: user.id } });
-      await this.prisma.user.delete({ where: { id: user.id } });
-
-      throw new BadRequestException('Erreur lors de l’envoi du mail, réessaie plus tard.');
-    }
+    // Audit trail (optionnel)
+    console.log(`[AUDIT] User créé: ${user.id} | Email: ${user.email} | ${new Date().toISOString()}`);
 
     return {
       userId: user.id,
       message: 'Compte créé. Vérifie ton email pour activer ton compte.',
+    };
+  } catch (err) {
+    console.error('[ERREUR SIGNUP]', err.message);
+
+    // Rollback manuel si la transaction a partiellement réussi
+    if (user?.id) {
+      await this.prisma.emailVerification.deleteMany({ where: { user_id: user.id } });
+      await this.prisma.user.delete({ where: { id: user.id } });
+
+      console.log(`[AUDIT] Rollback effectué pour user ${user.id}`);
+    }
+
+    throw new BadRequestException('Erreur lors de la création du compte. Réessaie plus tard.');
+  }
+}
+
+
+  /** --- Resend verification email OTP --- */
+  async resendEmailOtp(email : string ) {
+    const existingUser = await this.prisma.user.findUnique({ where: { email: email }});
+    if (!existingUser) throw new BadRequestException('User not foud'); 
+
+    console.error('user:', existingUser);
+    
+    try {
+      // Envoi mail
+      await this.initVerifyEmail( {user_id: existingUser.id, email: existingUser.email });
+    } catch (err) {
+
+      // rollback manuel si le mail n’est pas parti
+      
+      await this.prisma.emailVerification.deleteMany({ where: { user_id: existingUser.id } });
+      
+
+      throw new BadRequestException('Erreur survenu, réessaie plus tard. Erreur : ', err.message );
+    }
+     
+   
+
+    return { 
+      userId: existingUser.id,
+      message: 'Otp code sent. Check your email to activate your account.',
     };
   }
 
@@ -175,6 +352,19 @@ export class AuthService {
   /** --- Verify email OTP --- */
   async verifyEmail(user_id: string, code: string) {// // 1 la donnée de la requette pssée lors de la verifiction de mail 
     
+    //verifier le user 
+    //3- verifications 
+    const requestUser = await this.prisma.user.findUnique({
+      where: { id: user_id},
+    });
+    // if (!requestUser) throw new BadRequestException({
+    //   statusCode: 400,
+    //   message: 'User not found',
+    //   error: 'Invalid user ID or email',
+    //   timestamp: new Date().toISOString(),
+    // }); // si le user n'existe pas dans la table renvoyer une erreur 
+    if (!requestUser) throw new UserNotFoundException(user_id);
+
     // 2- rechercher le user  à vérifier dans la teble de verification de mail
     const record = await this.prisma.emailVerification.findFirst({
       where: { user_id, used: false },
@@ -184,7 +374,10 @@ export class AuthService {
     //3- verifications 
     if (!record) throw new BadRequestException('Code invalide ou expiré'); // si le user n'existe pas dans la table renvoyer une erreur 
 
-    if (dayjs().isAfter(record.expiresAt)) throw new BadRequestException('Code expiré'); // si l'heure de la date d'expiration est dépassé, renvoyer une erreur
+    if (dayjs().isAfter(record.expiresAt)) {
+      console.error('Expiration:', record.expiresAt, 'Now:', dayjs().toISOString())
+      throw new BadRequestException('Code expiré'); // si l'heure de la date d'expiration est dépassé, renvoyer une erreur
+      }
 
     const ok = await this.verifyTokenHash(code, record.codeHash);  // comprarer les code et recuperer le resultat dans 'ok'
     if (!ok) throw new BadRequestException('Code invalide');  // si le code n'est pas conforme à celui généré, renvoyer une erreur (verification est hachés)

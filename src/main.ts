@@ -64,6 +64,7 @@ async function bootstrap() {
   //   contentSecurityPolicy: false,
   // });
 
+  app.enableShutdownHooks(); // ← important
   const prisma = new PrismaClient();
 
   process.on('SIGINT', async () => {
